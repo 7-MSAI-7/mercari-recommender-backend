@@ -76,20 +76,14 @@ def recommendations_router():
             customer_sequences=sequences,
         )
     
-        targeted_products = shopping_service.search_google_shopping(sequences[-1].name)
-
         """Google Shopping에서 추천 상품을 검색합니다."""
-        recommendation_products = []
+        recommendation_products = shopping_service.search_google_shopping(sequences[-1].name)[:5]
 
         for recommendation in recommendations:
             search_keyword = recommendation["name"]
             products = shopping_service.search_google_shopping(search_keyword)
             if products is not None and len(products) > 0:
                 recommendation_products.extend(products)
-
-        for targeted_product in targeted_products:
-            random_index = random.randint(0, len(recommendation_products))
-            recommendation_products.insert(random_index, targeted_product)
 
         return recommendation_products
 
