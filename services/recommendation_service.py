@@ -22,7 +22,7 @@ def generate_recommendations(
     trained_model,
     idx_to_item_id: dict,
     customer_sequences: List[CustomerSequence],
-    top_n: int = 20,
+    top_n: int = 5,
 ) -> List[dict]:
     """
     사용자의 행동 시퀀스를 기반으로 상위 N개의 아이템을 추천합니다.
