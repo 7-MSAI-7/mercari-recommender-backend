@@ -1,137 +1,240 @@
+import asyncio
+from playwright.async_api import async_playwright
+import re
+import os
 import time
-import threading
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+from contextlib import asynccontextmanager
+
+
+# --- Configuration ---
+# 환경 변수 'PLAYWRIGHT_POOL_SIZE'에서 풀 크기를 읽어옵니다.
+# 설정되어 있지 않으면 기본값으로 8을 사용합니다.
+DEFAULT_POOL_SIZE = 4
+POOL_SIZE = int(os.environ.get("PLAYWRIGHT_POOL_SIZE", DEFAULT_POOL_SIZE))
+
+
+class PlaywrightPagePool:
+    """
+    Playwright Page 인스턴스를 관리하는 비동기 풀입니다.
+    미리 정해진 수의 Page 인스턴스를 생성하고 요청 시마다 대여/반납하여
+    동시 스크래핑 요청을 효율적으로 처리합니다.
+    """
+
+    def __init__(self, pool_size=POOL_SIZE):
+        """
+        풀을 초기화합니다. 실제 브라우저와 페이지 생성은 initialize() 메서드에서 비동기적으로 수행됩니다.
+        Args:
+            pool_size (int): 풀에서 유지할 페이지의 최대 개수.
+        """
+        if pool_size <= 0:
+            raise ValueError("풀 크기는 0보다 큰 정수여야 합니다.")
+        self._pool_size = pool_size
+        self._pages = asyncio.Queue(maxsize=pool_size)
+        self._playwright = None
+        self._browser = None
+
+    async def initialize(self):
+        """
+        Playwright를 시작하고 브라우저와 페이지 풀을 생성합니다.
+        """
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        for _ in range(self._pool_size):
+            page = await self._create_page()
+            await self._pages.put(page)
+
+    async def _create_page(self):
+        """
+        탐지를 회피하고 불필요한 리소스를 차단하는 설정이 적용된
+        새로운 Page 인스턴스를 생성합니다.
+        """
+        context = await self._browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+        )
+
+        async def block_unwanted_resources(route):
+            if route.request.resource_type in ("stylesheet", "font", "image"):
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await context.route(re.compile(r".*"), block_unwanted_resources)
+        page = await context.new_page()
+        return page
+
+    @asynccontextmanager
+    async def get_page(self):
+        """
+        풀에서 페이지를 가져오기 위한 비동기 컨텍스트 관리자를 제공합니다.
+        'async with' 구문과 함께 사용하면 사용 후 페이지가 자동으로 풀에 반환됩니다.
+        """
+        page = await self._pages.get()
+        try:
+            yield page
+        finally:
+            try:
+                await page.goto("about:blank")
+                await self._pages.put(page)
+            except Exception as e:
+                print(f"페이지 리셋 중 오류 발생, 새 페이지로 교체합니다: {e}")
+                try:
+                    await page.context.close()
+                except Exception as close_e:
+                    print(f"기존 컨텍스트 종료 중 오류: {close_e}")
+                new_page = await self._create_page()
+                await self._pages.put(new_page)
+
+    async def shutdown(self):
+        """
+        풀에 있는 모든 페이지와 컨텍스트를 닫고, 브라우저를 종료합니다.
+        """
+        print("Shutting down Playwright browser...")
+        while not self._pages.empty():
+            page = await self._pages.get()
+            try:
+                await page.context.close()
+            except Exception as e:
+                print(f"페이지/컨텍스트 종료 중 오류 발생: {e}")
+
+        if self._browser and self._browser.is_connected():
+            await self._browser.close()
+        if self._playwright:
+            await self._playwright.stop()
+        print("Playwright shut down.")
 
 
 class GoogleShoppingService:
-    def __init__(self):
+    """
+    PlaywrightPagePool을 사용하여 Google Shopping 스크래핑을 수행하는 서비스 클래스입니다.
+    """
+
+    def __init__(self, pool_size=POOL_SIZE):
+        self.pool = PlaywrightPagePool(pool_size=pool_size)
+
+    async def initialize(self):
+        await self.pool.initialize()
+
+    async def search(self, query: str):
         """
-        GoogleShoppingService 클래스의 인스턴스를 초기화하고 WebDriver를 설정합니다.
-        드라이버는 한 번만 초기화됩니다.
+        PlaywrightPagePool에서 페이지를 받아 스크래핑을 수행합니다.
         """
-        self.lock = threading.Lock()
-        # Chrome WebDriver를 자동으로 설정합니다.
-        service = Service(ChromeDriverManager().install())
-        options = webdriver.ChromeOptions()
-        # options.add_argument(
-        #     "--headless"
-        # )  # 브라우저 창을 띄우지 않고 실행하려면 이 주석을 해제하세요.
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        # adding argument to disable the AutomationControlled flag
-        options.add_argument("--disable-blink-features=AutomationControlled")
-
-        options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"
-        )
-
-        # exclude the collection of enable-automation switches
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-
-        # turn-off userAutomationExtension
-        options.add_experimental_option("useAutomationExtension", False)
-
-        self.driver = webdriver.Chrome(service=service, options=options)
-        self.original_window = self.driver.current_window_handle
-
-    def search_google_shopping(self, query: str):
-        """
-        Selenium을 사용하여 Google Shopping에서 상품 정보를 스크래핑합니다.
-        요청이 들어오면 새 탭을 열어서 검색한 뒤 닫습니다.
-
-        Args:
-            query (str): 검색할 키워드.
-
-        Returns:
-            list: 상품명, 가격, 판매자가 포함된 딕셔너리의 리스트.
-        """
-        with self.lock:
-            self.driver.switch_to.new_window("tab")
-
-            search_query = query.replace(" ", "+")
-            url = f"https://www.google.com/search?q={search_query}&tbm=shop"
-
-            products = []
+        products = []
+        async with self.pool.get_page() as page:
             try:
-                self.driver.get(url)
+                search_query = query.replace(" ", "+")
+                url = f"https://www.google.com/search?q={search_query}&tbm=shop"
+                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                await page.wait_for_selector("product-viewer-group", timeout=10000)
 
-                # 페이지가 로드되고 상품 목록이 나타날 때까지 최대 1초간 기다립니다.
-                WebDriverWait(self.driver, 1).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "product-viewer-group")
-                    )
-                )
-
-                # 각 상품 정보를 담고 있는 요소들을 모두 찾습니다.
-                groups = self.driver.find_elements(
-                    By.CSS_SELECTOR, "product-viewer-group g-card ul"
-                )
+                groups = await page.query_selector_all("product-viewer-group g-card ul")
 
                 for group in groups:
-                    items = group.find_elements(By.CSS_SELECTOR, "li")
+                    items = await group.query_selector_all("li")
 
                     for item in items:
                         try:
-                            splited_item = item.text.split("\n")
-                            image = item.find_element(
-                                By.CSS_SELECTOR, "img"
-                            ).get_attribute("src")
+                            full_text = await item.inner_text()
+                            splited_item = full_text.split("\n")
 
-                            # slice item
-                            if splited_item[0] == "세일" or splited_item[0] == "가격 인하":
-                                name = splited_item[1]
-                                price = splited_item[2]
-                                seller = splited_item[3]
+                            image_element = await item.query_selector("img")
+                            image = await image_element.get_attribute("src") if image_element else "No Image"
+                            
+                            if splited_item[0] in ("세일", "가격 인하") and len(splited_item) > 3:
+                                name, price, seller = splited_item[1], splited_item[2], splited_item[3]
+                            elif len(splited_item) > 2:
+                                name, price, seller = splited_item[0], splited_item[1], splited_item[2]
                             else:
-                                name = splited_item[0]
-                                price = splited_item[1]
-                                seller = splited_item[2]
+                                continue
 
-                            products.append(
-                                {
-                                    "image": image,
-                                    "name": name,
-                                    "price": price,
-                                    "seller": seller,
-                                }
-                            )
+                            products.append({"image": image, "name": name, "price": price, "seller": seller})
+                        except IndexError:
+                            print(f"상품 정보 파싱 중 데이터가 부족하여 건너뜁니다: {full_text}")
+                            continue
                         except Exception as e:
-                            # 일부 상품은 구조가 다르거나 정보가 없을 수 있으므로, 오류가 나도 계속 진행합니다.
                             print(f"하나의 상품 정보를 추출하는 데 실패했습니다: {e}")
                             continue
-
             except Exception as e:
-                print(
-                    "상품 목록을 로드하는 데 실패했습니다. 페이지 구조가 변경되었을 수 있습니다."
-                )
+                print(f"상품 목록을 로드하는 데 실패했습니다. (쿼리: {query})")
                 print(f"오류: {e}")
-            finally:
-                # 현재 탭을 닫습니다.
-                self.driver.close()
-                # 원래 탭으로 다시 전환합니다.
-                self.driver.switch_to.window(self.original_window)
 
-            return products
+        return products
 
-    def quit(self):
-        """
-        WebDriver를 종료합니다.
-        """
-        self.driver.quit()
+    async def close(self):
+        await self.pool.shutdown()
+
+
+# --- 싱글톤 서비스 인스턴스 관리 ---
+_google_shopping_service_instance = None
+
+async def get_google_shopping_service():
+    global _google_shopping_service_instance
+    if _google_shopping_service_instance is None:
+        _google_shopping_service_instance = GoogleShoppingService(pool_size=POOL_SIZE)
+        await _google_shopping_service_instance.initialize()
+    return _google_shopping_service_instance
+
+async def close_google_shopping_service():
+    global _google_shopping_service_instance
+    if _google_shopping_service_instance:
+        await _google_shopping_service_instance.close()
+        _google_shopping_service_instance = None
+
+async def search_google_shopping(query: str):
+    service = await get_google_shopping_service()
+    return await service.search(query)
+
+
+# --- 동시 실행 데모 ---
+async def worker(search_term, worker_id):
+    """
+    개별 비동기 워커에서 스크래핑을 수행합니다.
+    """
+    print(f"[워커 {worker_id}] 시작: '{search_term}' 검색 중...")
+    start_time = time.time()
+    results = await search_google_shopping(search_term)
+    end_time = time.time()
+    print(f"[워커 {worker_id}] 완료 ({end_time - start_time:.2f}초). 결과 {len(results)}개.")
+    if results:
+        print(f"[워커 {worker_id}] 첫 번째 결과: {results[0]['name']}")
+
+async def main():
+    """
+    데모 실행과 자원 정리를 모두 처리하는 메인 함수.
+    """
+    try:
+        search_terms = [
+            "iPhone 14", "Samsung Galaxy S23", "MacBook Pro M3",
+            "Sony WH-1000XM5", "LG OLED TV", "Nintendo Switch", "Dyson V15",
+        ]
+
+        # 서비스가 초기화되도록 보장합니다.
+        await get_google_shopping_service()
+
+        tasks = []
+        for i, term in enumerate(search_terms):
+            task = asyncio.create_task(worker(term, i + 1))
+            tasks.append(task)
+            # 실제 사용 환경과 유사하게 요청이 약간의 시차를 두고 들어오도록 설정
+            await asyncio.sleep(0.2)
+
+        await asyncio.gather(*tasks)
+
+        print("\n모든 동시 검색 작업이 완료되었습니다.")
+    finally:
+        print("\n서비스를 종료합니다...")
+        await close_google_shopping_service()
 
 
 if __name__ == "__main__":
-    search_keyword = "iPhone X"
-
-    if search_keyword:
-        service = GoogleShoppingService()
-        try:
-            scraped_data = service.search_google_shopping(search_keyword)
-        finally:
-            service.quit()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n사용자에 의해 중단되었습니다.")

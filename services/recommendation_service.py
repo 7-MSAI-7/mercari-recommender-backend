@@ -17,11 +17,11 @@ from schemas.customer_behavior import CustomerBehavior
 from services.model_loader import sentence_model
 
 
-def generate_recommendations(
+def generate_recommendations_using_gru(
     dataframe: pd.DataFrame,
     trained_model,
     idx_to_item_id: dict,
-    customer_sequences: List[CustomerSequence],
+    customer_behaviors: List[CustomerBehavior],
     top_n: int = 5,
 ) -> List[dict]:
     """
@@ -95,3 +95,4 @@ def generate_recommendations(
         )
 
         return recommendations 
+    

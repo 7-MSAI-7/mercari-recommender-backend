@@ -32,18 +32,22 @@ MIN_SEQUENCE_LENGTH = 3
 
 # 🧠 --- GRU 모델 구조 설정 ---
 # 🎁 각 상품의 이름(텍스트)을 얼마나 자세한 숫자 벡터로 표현할지 결정합니다. 숫자가 클수록 더 자세하지만 계산이 복잡해집니다.
-NAME_EMBEDDING_DIM = 384
+GRU_NAME_EMBEDDING_DIM = 384
 # ✨ 각 행동(예: '상품보기', '좋아요')을 얼마나 자세한 숫자 벡터로 표현할지 결정합니다.
-EVENT_EMBEDDING_DIM = 6
+GRU_EVENT_EMBEDDING_DIM = 12
 # 🧠 GRU 모델이 한 번에 얼마나 많은 정보를 기억할지(기억 용량) 결정합니다. 높을수록 복잡한 패턴을 학습할 수 있습니다.
 GRU_HIDDEN_DIM = 512
 # 🏢 GRU 층을 몇 개나 쌓을지 결정합니다. 깊을수록 더 복잡한 관계를 학습할 수 있지만 과적합의 위험이 있습니다.
 GRU_NUM_LAYERS = 2
 # 💧 학습 시 모델의 일부 연결을 무작위로 끊어서, 모델이 학습 데이터에만 너무 의존하지 않도록(과적합 방지) 합니다.
-DROPOUT_RATE = 0.5
+GRU_DROPOUT_RATE = 0.5
+
+
+# 🧠 --- Two Tower 모델 구조 설정 ---
+
 
 # Model artifact path
-MODEL_ARTIFACT_PATH = "model_artifacts/lastest_gru_recommender_20250610_20230501_0-4.pth"
+GRU_MODEL_ARTIFACT_PATH = "model_artifacts/gru/lastest_gru_recommender_20250611_20230501_0-4.pth"
 
 # Sentence Transformer model
 SENTENCE_MODEL_NAME = "all-MiniLM-L6-v2" 

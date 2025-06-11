@@ -1,5 +1,5 @@
 import random
-
+import asyncio
 from typing import List
 from fastapi import APIRouter, Depends, Request
 
@@ -10,10 +10,11 @@ from schemas.customer_behavior import CustomerBehavior
 from services.data_loader import intialize_merrec_dataframe
 from services.model_loader import (
     initialize_idx_to_item_id,
-    initialize_trained_model,
+    initialize_trained_gru_model,
 )
-from services.recommendation_service import generate_recommendations
-from services.google_shopping_service import GoogleShoppingService
+from services.recommendation_service import generate_recommendations_using_gru
+from services.google_shopping_service import search_google_shopping
+from services.customer_behavior_service import CustomerBehaviorService
 
 # core
 from core.config import EVENT_TO_IDX
@@ -25,15 +26,11 @@ merrec_dataframe = intialize_merrec_dataframe()
 # 1-2. 아이템 ID-인덱스 매핑 생성
 idx_to_item_id = initialize_idx_to_item_id(merrec_dataframe)
 
-# 1-3. 사전 학습된 GRU 모델 로드
-trained_model = initialize_trained_model(
+# 1-3. 사전 학습된 모델 로드
+trained_gru_model = initialize_trained_gru_model(
     n_events=len(EVENT_TO_IDX), n_items=len(idx_to_item_id)
 )
 
-
-# Dependency
-def get_shopping_service(request: Request) -> GoogleShoppingService:
-    return request.app.state.shopping_service
 
 
 def recommendations_router():
@@ -51,38 +48,51 @@ def recommendations_router():
 
     @router.post(
         "/recommendations",
-        summary="사용자 시퀀스 기반 상품 추천",
-        description="사용자의 상품 조회, 좋아요 등 행동 시퀀스를 입력받아 다음에 구매할 확률이 높은 상위 20개 상품을 추천합니다.",
+        summary="사용자 세션 기반 상품 추천",
+        description="사용자의 상품 조회, 좋아요 등 세션에 저장된 사용자 행동에 따라 상품을 추천합니다.",
     )
-    def create_recommendations(
-        sequences: List[CustomerSequence],
-        shopping_service: GoogleShoppingService = Depends(get_shopping_service),
+    async def create_recommendations(
+        request: Request,
     ):
         """
-        사용자 행동 시퀀스를 받아 추천 아이템 목록을 생성하는 API 엔드포인트입니다.
-
-        Args:
-            sequences (List[CustomerSequence]): 사용자의 행동 시퀀스 데이터.
-                                                 Pydantic 모델 `CustomerSequence`의 리스트 형태여야 합니다.
-            shopping_service (GoogleShoppingService): Google Shopping 검색 서비스(의존성 주입).
+        세션에 저장된 사용자 행동을 통해 추천 상품 목록을 생성하는 API 엔드포인트입니다.
 
         Returns:
             List[dict]: 추천된 아이템 목록과 각 아이템의 정보(점수 포함).
         """
-        recommendations = generate_recommendations(
-            dataframe=merrec_dataframe,
-            trained_model=trained_model,
-            idx_to_item_id=idx_to_item_id,
-            customer_sequences=sequences,
-        )
-    
-        """Google Shopping에서 추천 상품을 검색합니다."""
-        recommendation_products = shopping_service.search_google_shopping(sequences[-1].name)[:5]
 
-        for recommendation in recommendations:
-            search_keyword = recommendation["name"]
-            products = shopping_service.search_google_shopping(search_keyword)
-            if products is not None and len(products) > 0:
+        customer_behaviors = CustomerBehaviorService.get_behaviors(request)[:40]
+        recommendations = generate_recommendations_using_gru(
+            dataframe=merrec_dataframe,
+            trained_model=trained_gru_model,
+            idx_to_item_id=idx_to_item_id,
+            customer_behaviors=customer_behaviors,
+        )
+
+        if not customer_behaviors:
+            return []
+
+        # Google Shopping 검색을 위한 키워드 리스트 생성
+        search_keywords = [customer_behaviors[-1]["name"]] + [
+            rec["name"] for rec in random.choices(recommendations, k=3)
+        ]
+
+        # 모든 검색 작업을 비동기적으로 생성
+        tasks = [search_google_shopping(keyword) for keyword in search_keywords]
+
+        # 생성된 작업을 동시에 실행하고 결과 수집
+        search_results = await asyncio.gather(*tasks)
+
+        recommendation_products = []
+
+        # 첫 번째 검색 결과 (마지막 행동 기반)에서는 최대 5개만 추가
+        first_result = search_results[0]
+        if first_result:
+            recommendation_products.extend(first_result[:5])
+
+        # 나머지 추천 검색 결과 추가
+        for products in search_results[1:]:
+            if products:
                 recommendation_products.extend(products)
 
         return recommendation_products

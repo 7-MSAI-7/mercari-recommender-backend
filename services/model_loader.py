@@ -4,16 +4,22 @@ from sentence_transformers import SentenceTransformer
 # pytorch
 import torch
 
+# pickle
+import pickle
+
 # config
 from core.config import (
     DEVICE,
-    NAME_EMBEDDING_DIM,
-    EVENT_EMBEDDING_DIM,
+    GRU_NAME_EMBEDDING_DIM,
+    GRU_EVENT_EMBEDDING_DIM,
     GRU_HIDDEN_DIM,
     GRU_NUM_LAYERS,
-    DROPOUT_RATE,
-    MODEL_ARTIFACT_PATH,
+    GRU_DROPOUT_RATE,
+    GRU_MODEL_ARTIFACT_PATH,
     SENTENCE_MODEL_NAME,
+    TWO_TOWER_MODEL_ARTIFACT_PATH,
+    TWO_TOWER_MAPPING_ARTIFACT_PATH,
+    TWO_TOWER_ITEM_TEXT_EMBEDDINGS_ARTIFACT_PATH,
 )
 
 # domain specific models
@@ -29,7 +35,7 @@ sentence_model = SentenceTransformer(SENTENCE_MODEL_NAME)
 print("Sentence Transformer model loaded.")
 
 
-def initialize_trained_model(n_events, n_items):
+def initialize_trained_gru_model(n_events, n_items):
     """
     사전 학습된 GRU 추천 모델의 가중치를 로드하고 모델을 초기화합니다.
 
@@ -48,19 +54,19 @@ def initialize_trained_model(n_events, n_items):
     # 모델 구조 정의
     model_args = {
         "device": DEVICE,
-        "name_embedding_dim": NAME_EMBEDDING_DIM,
-        "event_embedding_dim": EVENT_EMBEDDING_DIM,
+        "name_embedding_dim": GRU_NAME_EMBEDDING_DIM,
+        "event_embedding_dim": GRU_EVENT_EMBEDDING_DIM,
         "gru_hidden_dim": GRU_HIDDEN_DIM,
         "gru_num_layers": GRU_NUM_LAYERS,
-        "dropout_rate": DROPOUT_RATE,
-        "n_events": n_events + 1, # 패딩 인덱스를 고려하여 +1
+        "dropout_rate": GRU_DROPOUT_RATE,
+        "n_events": n_events + 1,  # 패딩 인덱스를 고려하여 +1
         "n_items": n_items + 1,  # 패딩 인덱스를 고려하여 +1
     }
 
     # 저장된 모델 가중치 로드
-    print(f"Loading model state from: {MODEL_ARTIFACT_PATH}")
+    print(f"Loading model state from: {GRU_MODEL_ARTIFACT_PATH}")
     old_state_dict = torch.load(
-        MODEL_ARTIFACT_PATH,
+        GRU_MODEL_ARTIFACT_PATH,
         map_location=DEVICE,
     )
     # 모델 초기화 및 가중치 적용
@@ -95,4 +101,4 @@ def initialize_idx_to_item_id(dataframe):
     }
     print(f"Created mapping for {len(idx_to_item_id)} unique items.")
 
-    return idx_to_item_id 
+    return idx_to_item_id
