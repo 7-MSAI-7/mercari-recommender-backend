@@ -24,6 +24,7 @@ from core.config import (
 
 # domain specific models
 from models.gru_model import GruModel
+from models.two_tower_model import TwoTowerModel
 
 # --- 모델 및 변환기 전역 로딩 ---
 
@@ -102,3 +103,31 @@ def initialize_idx_to_item_id(dataframe):
     print(f"Created mapping for {len(idx_to_item_id)} unique items.")
 
     return idx_to_item_id
+
+
+def initialize_trained_two_tower_model():
+    with open(TWO_TOWER_MAPPING_ARTIFACT_PATH, "rb") as f:
+        two_tower_mappings = pickle.load(f)
+
+    two_tower_item_text_embeddings = torch.load(
+        TWO_TOWER_ITEM_TEXT_EMBEDDINGS_ARTIFACT_PATH, weights_only=True,
+        map_location=DEVICE
+    )
+
+    num_users = len(two_tower_mappings["user_categories"])
+    num_items = len(two_tower_mappings["item_categories"])
+    text_embedding_dim = two_tower_mappings["text_embedding_dim"]
+    final_embedding_dim = two_tower_mappings["final_embedding_dim"]
+
+    two_tower_model = TwoTowerModel(
+        num_users=num_users,
+        precomputed_item_embeddings=two_tower_item_text_embeddings,
+        text_embedding_dim=text_embedding_dim,
+        final_embedding_dim=final_embedding_dim,
+    )
+
+    old_state_dict = torch.load(TWO_TOWER_MODEL_ARTIFACT_PATH, map_location=DEVICE)
+    two_tower_model.load_state_dict(old_state_dict)
+    two_tower_model.eval()
+
+    return two_tower_model

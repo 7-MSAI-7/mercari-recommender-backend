@@ -11,6 +11,7 @@ from services.data_loader import intialize_merrec_dataframe
 from services.model_loader import (
     initialize_idx_to_item_id,
     initialize_trained_gru_model,
+    initialize_trained_two_tower_model,
 )
 from services.recommendation_service import generate_recommendations_using_gru
 from services.google_shopping_service import search_google_shopping
@@ -30,7 +31,7 @@ idx_to_item_id = initialize_idx_to_item_id(merrec_dataframe)
 trained_gru_model = initialize_trained_gru_model(
     n_events=len(EVENT_TO_IDX), n_items=len(idx_to_item_id)
 )
-
+trained_two_tower_model = initialize_trained_two_tower_model()
 
 
 def recommendations_router():

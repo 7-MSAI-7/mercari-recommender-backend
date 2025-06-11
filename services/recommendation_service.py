@@ -96,3 +96,7 @@ def generate_recommendations_using_gru(
 
         return recommendations 
     
+
+def generate_recommendations_using_two_tower():
+    pass
+    

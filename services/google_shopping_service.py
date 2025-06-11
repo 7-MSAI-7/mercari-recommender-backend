@@ -4,6 +4,7 @@ import re
 import os
 import time
 from contextlib import asynccontextmanager
+import random
 
 
 # --- Configuration ---
@@ -125,47 +126,94 @@ class GoogleShoppingService:
     async def search(self, query: str):
         """
         PlaywrightPagePool에서 페이지를 받아 스크래핑을 수행합니다.
+        실패 시 재시도 로직과 CAPTCHA 감지 기능을 포함합니다.
         """
-        products = []
-        async with self.pool.get_page() as page:
+        MAX_RETRIES = 2
+        for attempt in range(MAX_RETRIES):
             try:
-                search_query = query.replace(" ", "+")
-                url = f"https://www.google.com/search?q={search_query}&tbm=shop"
-                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                await page.wait_for_selector("product-viewer-group", timeout=10000)
+                products = []
+                # get_page()가 컨텍스트 관리자이므로, 루프 안에서 매번 호출해야 합니다.
+                async with self.pool.get_page() as page:
+                    search_query = query.replace(" ", "+")
+                    url = f"https://www.google.com/search?q={search_query}&tbm=shop"
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
-                groups = await page.query_selector_all("product-viewer-group g-card ul")
+                    # CAPTCHA 또는 블락 페이지 감지
+                    if "sorry/index" in page.url:
+                        # 재시도를 위해 의도적으로 예외 발생
+                        raise Exception(f"CAPTCHA page detected for query: {query}")
 
-                for group in groups:
-                    items = await group.query_selector_all("li")
+                    # 상품 컨테이너가 로드될 때까지 대기
+                    await page.wait_for_selector("product-viewer-group", timeout=10000)
+                    groups = await page.query_selector_all(
+                        "product-viewer-group g-card ul"
+                    )
 
-                    for item in items:
-                        try:
-                            full_text = await item.inner_text()
-                            splited_item = full_text.split("\n")
+                    # 상품이 없는 경우도 성공으로 간주
+                    if not groups:
+                        return []
 
-                            image_element = await item.query_selector("img")
-                            image = await image_element.get_attribute("src") if image_element else "No Image"
-                            
-                            if splited_item[0] in ("세일", "가격 인하") and len(splited_item) > 3:
-                                name, price, seller = splited_item[1], splited_item[2], splited_item[3]
-                            elif len(splited_item) > 2:
-                                name, price, seller = splited_item[0], splited_item[1], splited_item[2]
-                            else:
+                    for group in groups:
+                        items = await group.query_selector_all("li")
+                        for item in items:
+                            try:
+                                full_text = await item.inner_text()
+                                splited_item = full_text.split("\n")
+                                image_element = await item.query_selector("img")
+                                image = (
+                                    await image_element.get_attribute("src")
+                                    if image_element
+                                    else "No Image"
+                                )
+                                if (
+                                    splited_item[0] in ("세일", "가격 인하")
+                                    and len(splited_item) > 3
+                                ):
+                                    name, price, seller = (
+                                        splited_item[1],
+                                        splited_item[2],
+                                        splited_item[3],
+                                    )
+                                elif len(splited_item) > 2:
+                                    name, price, seller = (
+                                        splited_item[0],
+                                        splited_item[1],
+                                        splited_item[2],
+                                    )
+                                else:
+                                    continue
+                                products.append(
+                                    {
+                                        "image": image,
+                                        "name": name,
+                                        "price": price,
+                                        "seller": seller,
+                                    }
+                                )
+                            except IndexError:
+                                print(
+                                    f"상품 정보 파싱 중 데이터가 부족하여 건너뜁니다: {full_text}"
+                                )
+                                continue
+                            except Exception as e:
+                                print(f"하나의 상품 정보를 추출하는 데 실패했습니다: {e}")
                                 continue
 
-                            products.append({"image": image, "name": name, "price": price, "seller": seller})
-                        except IndexError:
-                            print(f"상품 정보 파싱 중 데이터가 부족하여 건너뜁니다: {full_text}")
-                            continue
-                        except Exception as e:
-                            print(f"하나의 상품 정보를 추출하는 데 실패했습니다: {e}")
-                            continue
-            except Exception as e:
-                print(f"상품 목록을 로드하는 데 실패했습니다. (쿼리: {query})")
-                print(f"오류: {e}")
+                    # 성공적으로 상품을 파싱했으면 결과 반환
+                    return products
 
-        return products
+            except Exception as e:
+                print(
+                    f"스크래핑 시도 {attempt + 1}/{MAX_RETRIES} 실패 (쿼리: {query}). 오류: {e}"
+                )
+                if attempt < MAX_RETRIES - 1:
+                    # 다음 시도 전 랜덤 딜레이
+                    await asyncio.sleep(random.uniform(1, 3))
+                else:
+                    # 최종 실패
+                    print(f"최종 스크래핑 실패 (쿼리: {query}).")
+                    return []
+        return []  # 루프가 모두 실패한 경우
 
     async def close(self):
         await self.pool.shutdown()
