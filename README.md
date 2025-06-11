@@ -29,7 +29,7 @@ GRU(Gated Recurrent Unit) 딥러닝 모델을 사용하여 사용자의 최근 �
 ├── models
 │   └── gru_model.py                # PyTorch GRU 모델 구조 정의
 ├── schemas
-│   └── customer_sequence.py        # API 요청/응답 데이터 구조(Pydantic) 정의
+│   └── customer_behavior.py        # API 요청/응답 데이터 구조(Pydantic) 정의
 ├── services
 │   ├── data_loader.py              # Azure에서 데이터 로딩 및 전처리
 │   ├── model_loader.py             # 모델 및 인코더 로딩

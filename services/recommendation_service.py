@@ -11,7 +11,7 @@ import pandas as pd
 from core.config import EVENT_TO_IDX
 
 # schemas
-from schemas.customer_sequence import CustomerSequence
+from schemas.customer_behavior import CustomerBehavior
 
 # services
 from services.model_loader import sentence_model
@@ -31,8 +31,8 @@ def generate_recommendations(
         dataframe (pd.DataFrame): 전체 아이템 정보가 담긴 데이터프레임.
         trained_model (GruModel): 사전 학습된 GRU 모델.
         idx_to_item_id (dict): 모델의 출력 인덱스를 실제 item_id로 매핑하는 딕셔너리.
-        customer_sequences (List[CustomerSequence]): 사용자의 행동 시퀀스 리스트.
-        top_n (int, optional): 추천할 아이템의 개수. Defaults to 20.
+        customer_behaviors (List[customer_behavior]): 사용자의 행동 시퀀스 리스트.
+        top_n (int, optional): 추천할 아이템의 개수. Defaults to 5.
 
     Returns:
         List[dict]: 추천된 아이템 목록. 각 아이템은 점수를 포함한 딕셔너리 형태입니다.
@@ -41,10 +41,10 @@ def generate_recommendations(
     # 1. 모델 입력 데이터 준비
     # 시퀀스의 각 이벤트 문자열을 `EVENT_TO_IDX`를 사용해 정수 인덱스로 변환합니다.
     event_indices = [
-        EVENT_TO_IDX[customer_sequence.event] for customer_sequence in customer_sequences
+        EVENT_TO_IDX[customer_behavior["event"]] for customer_behavior in customer_behaviors
     ]
     # 시퀀스의 각 상품 이름을 리스트로 추출합니다.
-    names = [customer_sequence.name for customer_sequence in customer_sequences]
+    names = [customer_behavior["name"] for customer_behavior in customer_behaviors]
 
     # torch.no_grad() 컨텍스트 내에서 추론을 수행하여 불필요한 그래디언트 계산을 방지합니다.
     with torch.inference_mode():

@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Request
 
 # schemas
-from schemas.customer_sequence import CustomerSequence
+from schemas.customer_behavior import CustomerBehavior
 
 # services
 from services.data_loader import intialize_merrec_dataframe
