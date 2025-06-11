@@ -61,8 +61,8 @@ class GoogleShoppingService:
             try:
                 self.driver.get(url)
 
-                # 페이지가 로드되고 상품 목록이 나타날 때까지 최대 4초간 기다립니다.
-                WebDriverWait(self.driver, 4).until(
+                # 페이지가 로드되고 상품 목록이 나타날 때까지 최대 1초간 기다립니다.
+                WebDriverWait(self.driver, 1).until(
                     EC.presence_of_element_located(
                         (By.CSS_SELECTOR, "product-viewer-group")
                     )
