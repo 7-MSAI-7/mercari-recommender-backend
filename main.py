@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 # services
 from services.google_shopping_service import GoogleShoppingService
+from starlette.middleware.sessions import SessionMiddleware
 
 # api: API 엔드포인트 라우터
 from api.api_router import api_router
@@ -31,6 +32,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# 세션 미들웨어 추가
+app.add_middleware(SessionMiddleware, secret_key="v98fv2nyuf89v2yv2b183")
 
 # 생성된 라우터를 FastAPI 앱에 포함시켜 '/api' 엔드포인트를 활성화합니다.
 app.include_router(api_router(), prefix="/api")
