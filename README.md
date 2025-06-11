@@ -33,7 +33,8 @@ GRU(Gated Recurrent Unit) 딥러닝 모델을 사용하여 사용자의 최근 �
 ├── services
 │   ├── data_loader.py              # Azure에서 데이터 로딩 및 전처리
 │   ├── model_loader.py             # 모델 및 인코더 로딩
-│   └── recommendation_service.py   # 실제 추천 로직 수행
+│   ├── recommendation_service.py   # 실제 추천 로직 수행
+│   └── google_shopping_service.py  # 구글 쇼핑 검색 수행
 ├── .env                            # 환경변수 파일
 ├── main.py                         # FastAPI 애플리케이션의 메인 진입점
 ├── requirements.txt                # Python 라이브러리 의존성 목록
