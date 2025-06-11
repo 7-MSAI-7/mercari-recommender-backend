@@ -47,7 +47,7 @@ def generate_recommendations(
     names = [customer_sequence.name for customer_sequence in customer_sequences]
 
     # torch.no_grad() 컨텍스트 내에서 추론을 수행하여 불필요한 그래디언트 계산을 방지합니다.
-    with torch.no_grad():
+    with torch.inference_mode():
         # 2. 모델 추론
         # 상품 이름 리스트를 Sentence Transformer를 이용해 임베딩으로 변환합니다.
         # unsqueeze(0)를 통해 배치 차원(batch_size=1)을 추가합니다.
