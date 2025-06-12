@@ -49,5 +49,9 @@ GRU_DROPOUT_RATE = 0.5
 # Model artifact path
 GRU_MODEL_ARTIFACT_PATH = "model_artifacts/gru/lastest_gru_recommender_20250611_20230501_0-4.pth"
 
+TWO_TOWER_MODEL_ARTIFACT_PATH = "model_artifacts/two_tower/two_tower_model.pth"
+TWO_TOWER_MAPPING_ARTIFACT_PATH = "model_artifacts/two_tower/mappings.pkl"
+TWO_TOWER_ITEM_TEXT_EMBEDDINGS_ARTIFACT_PATH = "model_artifacts/two_tower/item_text_embeddings.pt"
+
 # Sentence Transformer model
 SENTENCE_MODEL_NAME = "all-MiniLM-L6-v2" 
