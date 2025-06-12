@@ -45,7 +45,7 @@ def recommendations_router():
         if len(customer_behaviors) == 0:
             item_indices = two_tower_df.sample(3)["item_idx"].tolist()
             item_names = [two_tower_mappings["item_titles"][item_idx] for item_idx in item_indices]
-            customer_behaviors = [ { "name": item_name } for item_name in item_names ]
+            customer_behaviors = [ { "name": item_name } for item_name in item_names ][:4]
         print(customer_behaviors)
 
         keywords = generate_recommendations_using_two_tower(customer_behaviors, trained_two_tower_model, two_tower_mappings)
