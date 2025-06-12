@@ -7,6 +7,9 @@ import torch
 # pickle
 import pickle
 
+# pandas
+import pandas as pd
+
 # config
 from core.config import (
     DEVICE,
@@ -115,7 +118,6 @@ def initialize_trained_two_tower_model():
     )
 
     num_users = len(two_tower_mappings["user_categories"])
-    num_items = len(two_tower_mappings["item_categories"])
     text_embedding_dim = two_tower_mappings["text_embedding_dim"]
     final_embedding_dim = two_tower_mappings["final_embedding_dim"]
 
@@ -130,4 +132,6 @@ def initialize_trained_two_tower_model():
     two_tower_model.load_state_dict(old_state_dict)
     two_tower_model.eval()
 
-    return two_tower_model
+    two_tower_df = pd.read_pickle("model_artifacts/two_tower/test_df.pkl")
+
+    return two_tower_model, two_tower_mappings, two_tower_df

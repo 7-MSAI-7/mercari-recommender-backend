@@ -1,17 +1,12 @@
 import random
 import asyncio
-from typing import List
-from fastapi import APIRouter, Depends, Request
-
-# schemas
-from schemas.customer_behavior import CustomerBehavior
+from fastapi import APIRouter, Request
 
 # services
 from services.data_loader import intialize_merrec_dataframe
 from services.model_loader import (
     initialize_idx_to_item_id,
     initialize_trained_gru_model,
-    initialize_trained_two_tower_model,
 )
 from services.recommendation_service import generate_recommendations_using_gru
 from services.google_shopping_service import search_google_shopping
@@ -31,12 +26,11 @@ idx_to_item_id = initialize_idx_to_item_id(merrec_dataframe)
 trained_gru_model = initialize_trained_gru_model(
     n_events=len(EVENT_TO_IDX), n_items=len(idx_to_item_id)
 )
-trained_two_tower_model = initialize_trained_two_tower_model()
 
 
 def recommendations_router():
     """
-    추천 API를 위한 APIRouter를 생성하고 반환합니다.
+    GRU 모델을 사용한 추천 API를 위한 APIRouter를 생성하고 반환합니다.
 
     이 함수는 애플리케이션 시작 시 로드된 데이터와 모델을 클로저(closure) 형태로
     내부의 API 엔드포인트 함수에서 사용할 수 있도록 캡슐화합니다.
@@ -62,7 +56,7 @@ def recommendations_router():
             List[dict]: 추천된 아이템 목록과 각 아이템의 정보(점수 포함).
         """
 
-        customer_behaviors = CustomerBehaviorService.get_behaviors(request)[:40]
+        customer_behaviors = CustomerBehaviorService.get_behaviors(request)[-40:]
         recommendations = generate_recommendations_using_gru(
             dataframe=merrec_dataframe,
             trained_model=trained_gru_model,

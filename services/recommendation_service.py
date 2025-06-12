@@ -1,11 +1,21 @@
 # typing
 from typing import List
 
+# fastapi
+from fastapi import Request
+
 # pytorch
 import torch
 
 # pandas
 import pandas as pd
+
+# numpy
+import numpy as np
+
+# sklearn
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # config
 from core.config import EVENT_TO_IDX
@@ -14,7 +24,11 @@ from core.config import EVENT_TO_IDX
 from schemas.customer_behavior import CustomerBehavior
 
 # services
+from services.customer_behavior_service import CustomerBehaviorService
 from services.model_loader import sentence_model
+
+# models
+from models.two_tower_model import TwoTowerModel
 
 
 def generate_recommendations_using_gru(
@@ -97,6 +111,57 @@ def generate_recommendations_using_gru(
         return recommendations 
     
 
-def generate_recommendations_using_two_tower():
-    pass
-    
+def generate_recommendations_using_two_tower(
+    customer_behaviors,
+    model: TwoTowerModel,
+    mappings: dict,
+    top_n: int = 30,
+) -> List[dict]:
+    """
+    Two-Tower 모델을 사용하여 특정 사용자에게 상위 N개의 아이템을 추천합니다.
+
+    Args:
+        user_id (str): 추천을 생성할 사용자의 ID.
+        model (TwoTowerModel): 사전 학습된 Two-Tower 모델.
+        mappings (dict): 사용자/아이템 ID와 인덱스 간의 매핑 정보.
+        all_item_vectors (torch.Tensor): 사전 계산된 모든 아이템의 임베딩 벡터.
+        top_n (int, optional): 추천할 아이템의 개수. Defaults to 10.
+
+    Returns:
+        List[dict]: 추천된 아이템 목록. 각 아이템은 점수를 포함한 딕셔너리 형태입니다.
+    """
+    with torch.inference_mode():
+        num_items = len(mappings['item_categories'])
+        all_item_prices_dict = mappings['item_prices']
+        all_item_prices_tensor = torch.tensor([all_item_prices_dict.get(i, 0.0) for i in range(num_items)], dtype=torch.float)
+        all_item_ids_tensor = torch.LongTensor(range(num_items))
+        all_item_vectors = model.get_item_vector(all_item_ids_tensor, all_item_prices_tensor)
+
+        if len(customer_behaviors) == 0:
+            pass
+        else:
+            tfidf_vectorizer = TfidfVectorizer()
+            num_items = len(mappings["item_categories"])
+            all_titles = [mappings['item_titles'].get(i, "") for i in range(num_items)]
+            tfidf_matrix = tfidf_vectorizer.fit_transform(all_titles)
+                
+            behavior_item_vectors = []
+            for customer_behavior in customer_behaviors:
+                title_tfidf = tfidf_vectorizer.transform([customer_behavior["name"]])
+                similarities = cosine_similarity(title_tfidf, tfidf_matrix).flatten()
+                most_similar_item_idx = similarities.argmax()
+
+                behavior_item_vector = all_item_vectors[most_similar_item_idx]
+                behavior_item_vectors.append(behavior_item_vector)
+
+            user_vector = torch.mean(torch.stack(behavior_item_vectors), dim=0)
+
+        user_scores = torch.matmul(all_item_vectors, user_vector.T).squeeze()
+
+        top_k_indices = torch.topk(user_scores, k=top_n).indices.tolist()
+
+        recommendation_names = [
+            mappings["item_titles"][idx] for idx in top_k_indices
+        ]
+
+        return recommendation_names

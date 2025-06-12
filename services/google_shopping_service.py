@@ -10,7 +10,7 @@ import random
 # --- Configuration ---
 # 환경 변수 'PLAYWRIGHT_POOL_SIZE'에서 풀 크기를 읽어옵니다.
 # 설정되어 있지 않으면 기본값으로 8을 사용합니다.
-DEFAULT_POOL_SIZE = 4
+DEFAULT_POOL_SIZE = 8
 POOL_SIZE = int(os.environ.get("PLAYWRIGHT_POOL_SIZE", DEFAULT_POOL_SIZE))
 
 
@@ -59,6 +59,8 @@ class PlaywrightPagePool:
         context = await self._browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},
+            timezone_id="Asia/Seoul",
+            locale="ko-KR",
         )
 
         async def block_unwanted_resources(route):
