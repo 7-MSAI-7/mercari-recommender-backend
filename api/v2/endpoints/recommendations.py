@@ -55,7 +55,9 @@ def recommendations_router():
         tasks = [search_google_shopping(keyword) for keyword in keywords[:4]]
 
         # 생성된 작업을 동시에 실행하고 결과 수집
-        recommendation_products = await asyncio.gather(*tasks)
+        recommendation_products = []
+        for task in tasks:
+            recommendation_products.extend(await task)
 
         return recommendation_products
 
