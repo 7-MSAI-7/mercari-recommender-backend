@@ -2,11 +2,15 @@
 
 이 프로젝트는 사용자의 행동 시퀀스 데이터를 기반으로 다음에 관심을 가질 만한 상품을 추천하는 FastAPI 기반의 추천 시스템 API입니다.
 
-GRU(Gated Recurrent Unit) 딥러닝 모델을 사용하여 사용자의 최근 행동 패턴(상품 조회, 좋아요, 장바구니 담기 등)을 학습하고, 이를 통해 개인화된 상품 추천 목록을 제공합니다.
+두 가지 버전의 추천 모델을 제공합니다:
+- **V1**: GRU(Gated Recurrent Unit) 모델을 사용한 시퀀스 기반 추천
+- **V2**: Two-Tower 모델을 사용한 임베딩 기반 추천
 
 ## 주요 기능
-- **시퀀스 기반 추천**: 사용자의 행동 순서를 고려한 GRU 모델을 통해 정교한 추천을 제공합니다.
+- **다중 모델 지원**: GRU와 Two-Tower 모델을 통해 다양한 추천 방식을 제공합니다.
 - **실시간 추론**: FastAPI를 통해 들어온 요청을 실시간으로 처리하고 추천 결과를 반환합니다.
+- **백그라운드 작업 관리**: 비동기 작업을 효율적으로 관리하고 필요시 취소할 수 있습니다.
+- **세션 기반 사용자 관리**: 사용자별로 독립된 세션을 통해 추천 이력을 관리합니다.
 - **텍스트 임베딩 활용**: Sentence-Transformers를 사용하여 상품 이름(텍스트)을 의미론적 벡터로 변환, 모델의 입력으로 활용합니다.
 - **Azure 연동**: Azure Machine Learning Workspace의 데이터 저장소에 있는 학습 데이터를 직접 로드합니다.
 - **확장 가능한 구조**: `api`, `services`, `core`, `models` 등 역할별로 모듈화된 구조로 기능 추가 및 유지보수가 용이합니다.
@@ -19,26 +23,35 @@ GRU(Gated Recurrent Unit) 딥러닝 모델을 사용하여 사용자의 최근 �
 ├── api
 │   ├── v1
 │   │   ├── endpoints
-│   │   │   └── recommendations.py  # '/recommendations' 엔드포인트 정의
-│   │   └──api_v1_router.py         # '/v1' 진입점 정의 
-│   └── api_router.py               # '/api' API 진입점 정의
+│   │   │   ├── recommendations.py     # V1 '/recommendations' 엔드포인트
+│   │   │   └── customer_behaviors.py  # 사용자 행동 관리 엔드포인트
+│   │   └── api_v1_router.py           # '/v1' 진입점 정의
+│   ├── v2
+│   │   ├── endpoints
+│   │   │   └── recommendations.py     # V2 '/recommendations' 엔드포인트
+│   │   └── api_v2_router.py           # '/v2' 진입점 정의
+│   └── api_router.py                  # '/api' API 진입점 정의
 ├── core
-│   └── config.py                   # 프로젝트의 모든 설정값 관리
+│   ├── config.py                      # 프로젝트의 모든 설정값 관리
+│   └── database.py                    # SQLite 데이터베이스 설정 및 모델
 ├── model_artifacts
-│   └── *.pth                       # 사전 학습된 모델 가중치 파일
+│   └── *.pth                          # 사전 학습된 모델 가중치 파일
 ├── models
-│   └── gru_model.py                # PyTorch GRU 모델 구조 정의
+│   ├── gru_model.py                   # PyTorch GRU 모델 구조 정의
+│   └── two_tower_model.py             # PyTorch Two-Tower 모델 구조 정의
 ├── schemas
-│   └── customer_behavior.py        # API 요청/응답 데이터 구조(Pydantic) 정의
+│   ├── customer_behavior.py           # 사용자 행동 데이터 구조
+│   └── product.py                     # 상품 및 작업 상태 데이터 구조
 ├── services
-│   ├── data_loader.py              # Azure에서 데이터 로딩 및 전처리
-│   ├── model_loader.py             # 모델 및 인코더 로딩
-│   ├── recommendation_service.py   # 실제 추천 로직 수행
-│   └── google_shopping_service.py  # 구글 쇼핑 검색 수행
-├── .env                            # 환경변수 파일
-├── main.py                         # FastAPI 애플리케이션의 메인 진입점
-├── requirements.txt                # Python 라이브러리 의존성 목록
-└── README.md                       # 프로젝트 설명서
+│   ├── data_loader.py                 # Azure에서 데이터 로딩 및 전처리
+│   ├── model_loader.py                # 모델 및 인코더 로딩
+│   ├── recommendation_service.py      # 실제 추천 로직 수행
+│   ├── google_shopping_service.py     # 구글 쇼핑 검색 수행
+│   └── customer_behavior_service.py   # 사용자 행동 관리 서비스
+├── .env                               # 환경변수 파일
+├── main.py                            # FastAPI 애플리케이션의 메인 진입점
+├── requirements.txt                   # Python 라이브러리 의존성 목록
+└── README.md                          # 프로젝트 설명서
 ```
 
 ---
@@ -136,77 +149,81 @@ INFO:     Application startup complete.
 서버가 실행 중일 때 웹 브라우저에서 `http://127.0.0.1:8000/docs` 로 접속하면, FastAPI가 자동으로 생성해주는 Swagger UI 문서를 확인할 수 있습니다.
 이곳에서 각 API의 상세한 명세와 사용법을 확인하고 직접 테스트해볼 수 있습니다.
 
-### `/api/v1/recommendations` 엔드포인트
+### 사용자 행동 관리 API
+#### `/api/v1/customers/behaviors` 엔드포인트
 - **Method**: `POST`
-- **URL**: `http://127.0.0.1:8000/api/v1/recommendations`
-- **Description**: 사용자의 행동 시퀀스를 받아 추천 상품 목록을 반환합니다.
+- **URL**: `http://127.0.0.1:8000/api/v1/customers/behaviors`
+- **Description**: 사용자의 행동을 세션에 저장합니다.
 
 #### 요청 본문 (Request Body)
-사용자의 행동 시퀀스를 JSON 배열 형태로 전달합니다. 각 요소는 `name`(상품명)과 `event`(행동 종류)를 포함해야 합니다.
-- `name`    상품명 키워드: `T-Shirt`
-- `event`   사용자 행동: `item_view`, `item_like`, `item_add_to_cart_tap`, `offer_make`, `buy_start`, `buy_comp`
-
-**예시:**
 ```json
-[
-  {
-    "name": "[Brand A] Classic Leather Jacket",
-    "event": "item_view"
-  },
-  {
-    "name": "Modern White Sneakers",
-    "event": "item_view"
-  },
-  {
-    "name": "White Sneakers",
-    "event": "buy_start"
-  }
-]
+{
+  "name": "상품명",
+  "event": "item_view"  // item_view, item_like, item_add_to_cart_tap, offer_make, buy_start, buy_comp
+}
 ```
 
-#### `curl`을 이용한 요청 예시
-```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8000/recommendations' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '[
-  {
-    "name": "[Brand A] Classic Leather Jacket",
-    "event": "item_view"
-  },
-  {
-    "name": "[Brand B] Modern White Sneakers",
-    "event": "item_view"
-  },
-  {
-    "name": "[Brand B] Modern White Sneakers",
-    "event": "item_like"
-  }
-]'
-```
+### 추천 API (V1)
+#### `/api/v1/recommendations` 엔드포인트
+- **Method**: `POST`
+- **URL**: `http://127.0.0.1:8000/api/v1/recommendations`
+- **Description**: 사용자의 행동 시퀀스를 기반으로 GRU 모델을 사용한 추천 상품 목록을 생성합니다.
+- **특징**: 
+  - 진행 중인 작업이 있으면 자동으로 취소하고 새 작업을 시작합니다.
+  - 작업 상태는 'pending', 'completed', 'failed', 'cancelled' 중 하나입니다.
+  - 작업이 완료되면 구글 쇼핑 검색 결과를 포함한 상품 목록을 반환합니다.
 
 #### 응답 본문 (Response Body)
-추천된 상품 목록이 점수(`score`)가 높은 순으로 정렬된 JSON 배열 형태로 반환됩니다.
-
-**예시:**
 ```json
-[
-    {
-        "item_id": 12345,
-        "name": "[Brand C] Vintage Denim Jeans",
-        "c0_name": "Apparel",
-        "c1_name": "Pants",
-        "c2_name": "Jeans",
-        "score": 0.875
-    },
-    {
-        "item_id": 67890,
-        "name": "[Brand D] Silk Scarf",
-        "c0_name": "Accessories",
-        "c1_name": "Scarves",
-        "c2_name": "Silk",
-        "score": 0.812
-    }
-]
+{
+  "task_id": "작업 ID",
+  "status": "pending",
+  "api_version": "v1"
+}
 ```
+
+#### 작업 상태 조회
+- **Method**: `GET`
+- **URL**: `http://127.0.0.1:8000/api/v1/recommendations`
+- **Description**: 현재 작업의 상태와 결과를 조회합니다.
+
+#### 응답 본문 (Response Body)
+```json
+{
+  "task_id": "작업 ID",
+  "status": "completed",
+  "api_version": "v1",
+  "data": [
+    {
+      "name": "상품명",
+      "price": "가격",
+      "seller": "판매자",
+      "image": "이미지 URL"
+    }
+  ]
+}
+```
+
+### 추천 API (V2)
+#### `/api/v2/recommendations` 엔드포인트
+- **Method**: `POST`
+- **URL**: `http://127.0.0.1:8000/api/v2/recommendations`
+- **Description**: Two-Tower 모델을 사용하여 사용자의 행동 시퀀스와 상품 간의 의미적 유사도를 기반으로 추천 상품 목록을 생성합니다.
+- **특징**:
+  - V1과 동일한 작업 관리 및 취소 기능을 제공합니다.
+  - 상품명의 의미적 유사도를 고려한 추천을 제공합니다.
+  - 사용자 행동이 없는 경우 랜덤 상품을 추천합니다.
+
+#### 응답 형식
+V1과 동일한 형식으로 작업 상태와 결과를 반환합니다.
+
+### 작업 상태 관리
+- 모든 추천 요청은 비동기적으로 처리되며, 작업 ID를 통해 상태를 추적할 수 있습니다.
+- 진행 중인 작업이 있는 상태에서 새로운 요청이 들어오면 기존 작업이 자동으로 취소됩니다.
+- 작업이 취소되면 백그라운드에서 실행 중인 모든 프로세스(모델 추론, 스크래핑 등)가 중단됩니다.
+- 작업 상태는 세션에 저장되어 클라이언트가 쉽게 추적할 수 있습니다.
+
+### 세션 관리
+- 각 사용자는 고유한 `user_id`를 가지며, 이는 세션에 저장됩니다.
+- 사용자별로 독립된 추천 이력과 작업 상태를 관리합니다.
+- 세션은 서버 재시작 시 초기화되지만, DB에 저장된 작업 이력은 유지됩니다.
