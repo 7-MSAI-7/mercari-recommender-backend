@@ -258,24 +258,82 @@ def recommendations_router():
 
         # 1. 세션에 작업 정보가 없는 경우 (v1_task가 없는 경우)
         if not v1_task_info or not v1_task_info.get("task_id"):
+            # 이전의 마지막 성공 기록을 찾아서 반환
+            previous_completed_task = db.query(db_models.Task)\
+                .filter(
+                    db_models.Task.user_id == user_id,
+                    db_models.Task.status == 'completed',
+                    db_models.Task.api_version == 'v1'  # V1 API의 작업만 조회
+                )\
+                .order_by(db_models.Task.completed_at.desc())\
+                .first()
+
+            if previous_completed_task:
+                # V1 API의 작업에 해당하는 상품만 조회
+                products = db.query(db_models.Product)\
+                    .join(db_models.Task, db_models.Product.task_id == db_models.Task.task_id)\
+                    .filter(
+                        db_models.Task.task_id == previous_completed_task.task_id,
+                        db_models.Task.api_version == 'v1'
+                    ).all()
+                if products:
+                    return {
+                        "task_id": previous_completed_task.task_id,
+                        "status": "completed",
+                        "api_version": "v1",
+                        "data": products
+                    }
+
+            # 이전 성공 기록이 없거나 결과가 없는 경우에만 랜덤 상품 반환
             random_products = get_random_products(db, 40)
             return {
-                "task_id": "random", 
-                "status": "completed", 
-                "api_version": "v1", 
+                "task_id": "random",
+                "status": "completed",
+                "api_version": "v1",
                 "data": random_products
             }
 
         task_id = v1_task_info.get("task_id")
-        task = db.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
+        task = db.query(db_models.Task)\
+            .filter(
+                db_models.Task.task_id == task_id,
+                db_models.Task.api_version == 'v1'  # V1 API의 작업만 조회
+            ).first()
 
         # 2. 세션에 ID는 있지만 DB에 없는 경우
         if not task:
+            # 이전의 마지막 성공 기록을 찾아서 반환
+            previous_completed_task = db.query(db_models.Task)\
+                .filter(
+                    db_models.Task.user_id == user_id,
+                    db_models.Task.status == 'completed',
+                    db_models.Task.api_version == 'v1'  # V1 API의 작업만 조회
+                )\
+                .order_by(db_models.Task.completed_at.desc())\
+                .first()
+
+            if previous_completed_task:
+                # V1 API의 작업에 해당하는 상품만 조회
+                products = db.query(db_models.Product)\
+                    .join(db_models.Task, db_models.Product.task_id == db_models.Task.task_id)\
+                    .filter(
+                        db_models.Task.task_id == previous_completed_task.task_id,
+                        db_models.Task.api_version == 'v1'
+                    ).all()
+                if products:
+                    return {
+                        "task_id": previous_completed_task.task_id,
+                        "status": "completed",
+                        "api_version": "v1",
+                        "data": products
+                    }
+
+            # 이전 성공 기록이 없거나 결과가 없는 경우에만 랜덤 상품 반환
             random_products = get_random_products(db, 40)
             return {
-                "task_id": "random", 
-                "status": "completed", 
-                "api_version": "v1", 
+                "task_id": "random",
+                "status": "completed",
+                "api_version": "v1",
                 "data": random_products
             }
 
@@ -284,39 +342,100 @@ def recommendations_router():
             if task.status == "completed":
                 # 작업이 성공적으로 완료된 경우에만 세션에 task_id 유지
                 request.session["v1_task"] = {"task_id": task.task_id, "status": task.status}
-            else:
+            elif task.status in ["failed", "cancelled"]:
                 # 실패, 취소 등의 경우 세션에서 task_id 제거
                 request.session.pop("v1_task", None)
 
-        response_data = {"task_id": task.task_id, "status": task.status, "api_version": task.api_version}
+        response_data = {
+            "task_id": task.task_id,
+            "status": task.status,
+            "api_version": "v1"
+        }
         
         if task.status == "completed":
-            products = db.query(db_models.Product).filter(db_models.Product.task_id == task_id).all()
+            # V1 API의 작업에 해당하는 상품만 조회
+            products = db.query(db_models.Product)\
+                .join(db_models.Task, db_models.Product.task_id == db_models.Task.task_id)\
+                .filter(
+                    db_models.Task.task_id == task_id,
+                    db_models.Task.api_version == 'v1'
+                ).all()
             
             # 3. 작업은 완료됐지만 결과 데이터가 없는 경우
             if not products:
+                # 이전의 마지막 성공 기록을 찾아서 반환
+                previous_completed_task = db.query(db_models.Task)\
+                    .filter(
+                        db_models.Task.user_id == user_id,
+                        db_models.Task.status == 'completed',
+                        db_models.Task.api_version == 'v1',  # V1 API의 작업만 조회
+                        db_models.Task.task_id != task_id  # 현재 작업 제외
+                    )\
+                    .order_by(db_models.Task.completed_at.desc())\
+                    .first()
+
+                if previous_completed_task:
+                    # V1 API의 작업에 해당하는 상품만 조회
+                    products = db.query(db_models.Product)\
+                        .join(db_models.Task, db_models.Product.task_id == db_models.Task.task_id)\
+                        .filter(
+                            db_models.Task.task_id == previous_completed_task.task_id,
+                            db_models.Task.api_version == 'v1'
+                        ).all()
+                    if products:
+                        # 이전 성공 기록의 task_id와 데이터를 함께 반환
+                        return {
+                            "task_id": previous_completed_task.task_id,
+                            "status": "completed",
+                            "api_version": "v1",
+                            "data": products
+                        }
+                
+                # 이전 성공 기록이 없거나 결과가 없는 경우 랜덤 상품 반환
                 random_products = get_random_products(db, 40)
-                response_data["data"] = random_products
-            else:
-                response_data["data"] = products
+                return {
+                    "task_id": "random",
+                    "status": "completed",
+                    "api_version": "v1",
+                    "data": random_products
+                }
+            
+            # 현재 작업의 데이터가 있는 경우
+            response_data["data"] = products
         elif task.status == "pending":
-            # 진행 중일 경우, 이전의 마지막 성공 기록을 찾아서 반환
+            # 진행 중일 경우 데이터는 null
+            response_data["data"] = None
+        else: # failed 등 다른 상태
+            # 실패 상태일 때도 이전 성공 기록을 찾아서 반환
             previous_completed_task = db.query(db_models.Task)\
                 .filter(
                     db_models.Task.user_id == user_id,
-                    db_models.Task.status == 'completed'
+                    db_models.Task.status == 'completed',
+                    db_models.Task.api_version == 'v1',  # V1 API의 작업만 조회
+                    db_models.Task.task_id != task_id  # 현재 작업 제외
                 )\
                 .order_by(db_models.Task.completed_at.desc())\
                 .first()
 
             if previous_completed_task:
+                # V1 API의 작업에 해당하는 상품만 조회
                 products = db.query(db_models.Product)\
-                    .filter(db_models.Product.task_id == previous_completed_task.task_id).all()
-                response_data["data"] = products
-            else:
-                response_data["data"] = None # 이전 성공 기록이 없으면 데이터는 null
-        else: # failed 등 다른 상태
-             response_data["data"] = None
+                    .join(db_models.Task, db_models.Product.task_id == db_models.Task.task_id)\
+                    .filter(
+                        db_models.Task.task_id == previous_completed_task.task_id,
+                        db_models.Task.api_version == 'v1'
+                    ).all()
+                if products:
+                    # 이전 성공 기록의 task_id와 데이터를 함께 반환
+                    return {
+                        "task_id": previous_completed_task.task_id,
+                        "status": "completed",
+                        "api_version": "v1",
+                        "data": products
+                    }
+            
+            # 이전 성공 기록이 없거나 결과가 없는 경우 데이터는 []
+            response_data["data"] = []
             
         return response_data
 
