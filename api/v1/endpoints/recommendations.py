@@ -63,7 +63,7 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
             customer_behaviors=customer_behaviors,
         )
         search_keywords = [customer_behaviors[-1]["name"]] + [
-            rec["name"] for rec in random.choices(recommendations, k=3)
+            rec["name"] for rec in random.choices(recommendations, k=4)
         ]
 
         # 작업 취소 상태 재확인
@@ -87,7 +87,7 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
     try:
         # 2. 스크래핑 실행
         tasks = [search_google_shopping(keyword) for keyword in search_keywords]
-        search_results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
 
         # 작업 취소 상태 재확인
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
@@ -96,15 +96,9 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
                 del _running_tasks[task_id]
             return
 
-        recommendation_products_data = []
-        first_result = search_results[0]
-        if first_result:
-            recommendation_products_data.extend(first_result[:5])
-        for products in search_results[1:]:
-            if products:
-                recommendation_products_data.extend(products)
+        recommendation_products = [item for sublist in results for item in sublist if sublist]
 
-        for prod in recommendation_products_data:
+        for prod in recommendation_products:
             db_product = db_models.Product(
                 task_id=task_id,
                 name=prod.get("name"),
@@ -163,7 +157,6 @@ def recommendations_router():
     )
     async def create_recommendations(
         request: Request,
-        background_tasks: BackgroundTasks,
         db: Session = Depends(get_db),
     ):
         if "user_id" not in request.session:

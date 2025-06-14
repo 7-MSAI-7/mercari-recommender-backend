@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from typing import Dict
+import random
 
 from fastapi import APIRouter, Request, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ trained_two_tower_model, two_tower_mappings, two_tower_df = initialize_trained_t
 # 전역 변수로 실행 중인 작업을 관리
 _running_tasks: Dict[str, asyncio.Task] = {}
 
-async def run_scraping_and_store_in_db(customer_behaviors: list, task_id: str):
+async def run_v2_scraping_and_store_in_db(customer_behaviors: list, task_id: str):
     """
     백그라운드에서 [모델 예측 -> 스크래핑]을 수행하고 결과를 DB에 저장
     """
@@ -39,12 +40,15 @@ async def run_scraping_and_store_in_db(customer_behaviors: list, task_id: str):
             return
 
         # 1. 모델 예측을 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
-        keywords = await run_in_threadpool(
+        recommendations = await run_in_threadpool(
             generate_recommendations_using_two_tower,
             customer_behaviors=customer_behaviors,
             model=trained_two_tower_model,
             mappings=two_tower_mappings
         )
+        search_keywords = [customer_behaviors[-1]["name"]] + [
+            rec["name"] for rec in random.choices(recommendations, k=4)
+        ]
 
         # 작업 취소 상태 재확인
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
@@ -66,7 +70,7 @@ async def run_scraping_and_store_in_db(customer_behaviors: list, task_id: str):
 
     try:
         # 2. 스크래핑 실행
-        tasks = [search_google_shopping(keyword) for keyword in keywords[:4]]
+        tasks = [search_google_shopping(keyword) for keyword in search_keywords]
         results = await asyncio.gather(*tasks)
 
         # 작업 취소 상태 재확인
@@ -129,7 +133,6 @@ def recommendations_router():
     )
     async def create_recommendations(
         request: Request,
-        background_tasks: BackgroundTasks,
         db: Session = Depends(get_db),
     ):
         if "user_id" not in request.session:
@@ -176,7 +179,7 @@ def recommendations_router():
         request.session["v2_task"] = {"task_id": new_task.task_id, "status": new_task.status}
         
         # 백그라운드 작업 생성 및 저장
-        background_task = asyncio.create_task(run_scraping_and_store_in_db(customer_behaviors, task_id))
+        background_task = asyncio.create_task(run_v2_scraping_and_store_in_db(customer_behaviors, task_id))
         _running_tasks[task_id] = background_task
         
         return new_task
