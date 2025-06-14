@@ -248,7 +248,12 @@ def recommendations_router():
 
         # DB 상태가 세션과 다르면 세션 업데이트
         if task.status != v1_task_info.get("status"):
-            request.session["v1_task"] = {"task_id": task.task_id, "status": task.status}
+            if task.status == "completed":
+                # 작업이 성공적으로 완료된 경우에만 세션에 task_id 유지
+                request.session["v1_task"] = {"task_id": task.task_id, "status": task.status}
+            else:
+                # 실패, 취소 등의 경우 세션에서 task_id 제거
+                request.session.pop("v1_task", None)
 
         response_data = {"task_id": task.task_id, "status": task.status, "api_version": task.api_version}
         
