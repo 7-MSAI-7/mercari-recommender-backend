@@ -12,8 +12,8 @@ def products_router():
         q: str,
     ):
         task = search_google_shopping(q)
-        result = await asyncio.gather(task)
+        results = await asyncio.gather(task)
 
-        return result
+        return results[0]
     
     return router
