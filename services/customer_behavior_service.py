@@ -7,7 +7,7 @@ class CustomerBehaviorService:
             request.session["behavior"] = []
 
         if len(request.session["behavior"]) >= 40:
-            request.session["behavior"].pop(0)
+            request.session["behavior"] = request.session["behavior"][-39:]
 
         request.session["behavior"].append({"name": name, "event": event})
         return request.session["behavior"]
