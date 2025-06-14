@@ -23,8 +23,12 @@ from services.customer_behavior_service import CustomerBehaviorService
 # core & schemas
 from core.config import EVENT_TO_IDX
 from core.database import get_db, SessionLocal
+from core.logging_config import setup_logger
 import core.database as db_models
 import schemas.product as schemas
+
+# 로거 설정
+logger = setup_logger('v1_api')
 
 # Load data and models
 # 1-1. Azure에서 데이터프레임 로드 및 전처리
@@ -47,13 +51,17 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
     """
     db_session = SessionLocal()
     try:
+        logger.info(f"[{task_id}] 시작: 모델 추론 및 스크래핑 작업")
         # 작업 시작 전 취소 상태 확인
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
         if not task or task.status == "cancelled":
+            logger.info(f"[{task_id}] 작업이 취소되었거나 존재하지 않음")
             if task_id in _running_tasks:
                 del _running_tasks[task_id]
             return
 
+        logger.info(f"[{task_id}] 1단계: 모델 추론 시작")
+        logger.info(f"[{task_id}] 입력 데이터: customer_behaviors={customer_behaviors}")
         # 1. 모델 예측을 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
         recommendations = await run_in_threadpool(
             generate_recommendations_using_gru,
@@ -62,19 +70,27 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
             idx_to_item_id=idx_to_item_id,
             customer_behaviors=customer_behaviors,
         )
+        logger.info(f"[{task_id}] 모델 추론 결과: recommendations={recommendations}")
+
         search_keywords = [customer_behaviors[-1]["name"]] + [
             rec["name"] for rec in random.choices(recommendations, k=4)
         ]
+        logger.info(f"[{task_id}] 검색 키워드 생성: search_keywords={search_keywords}")
 
         # 작업 취소 상태 재확인
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
         if not task or task.status == "cancelled":
+            logger.info(f"[{task_id}] 작업이 취소됨")
             if task_id in _running_tasks:
                 del _running_tasks[task_id]
             return
 
     except Exception as e:
-        print(f"Error during v1 model inference task {task_id}: {e}")
+        import traceback
+        logger.error(f"[{task_id}] 모델 추론 중 에러 발생:")
+        logger.error(f"[{task_id}] 에러 타입: {type(e).__name__}")
+        logger.error(f"[{task_id}] 에러 메시지: {str(e)}")
+        logger.error(f"[{task_id}] 에러 위치:\n{traceback.format_exc()}")
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
         if task:
             task.status = "failed"
@@ -85,20 +101,28 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
         return
 
     try:
+        logger.info(f"[{task_id}] 2단계: 스크래핑 시작")
         # 2. 스크래핑 실행
         tasks = [search_google_shopping(keyword) for keyword in search_keywords]
+        logger.info(f"[{task_id}] 스크래핑 작업 생성 완료: {len(tasks)}개 키워드")
         results = await asyncio.gather(*tasks)
+        logger.info(f"[{task_id}] 스크래핑 결과 수신: {len(results)}개 결과")
 
         # 작업 취소 상태 재확인
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
         if not task or task.status == "cancelled":
+            logger.info(f"[{task_id}] 작업이 취소됨")
             if task_id in _running_tasks:
                 del _running_tasks[task_id]
             return
 
         recommendation_products = [item for sublist in results for item in sublist if sublist]
+        logger.info(f"[{task_id}] 스크래핑 결과 처리 완료: {len(recommendation_products)}개 상품")
 
-        for prod in recommendation_products:
+        # 3. 스크래핑된 상품들을 DB에 저장
+        logger.info(f"[{task_id}] 3단계: DB 저장 시작")
+        for idx, prod in enumerate(recommendation_products, 1):
+            logger.info(f"[{task_id}] 상품 {idx}/{len(recommendation_products)} 저장 시도: {prod.get('name', 'Unknown')}")
             db_product = db_models.Product(
                 task_id=task_id,
                 name=prod.get("name"),
@@ -108,24 +132,33 @@ async def run_v1_scraping_and_store_in_db(customer_behaviors: list, task_id: str
             )
             db_session.add(db_product)
         
+        # 4. 작업 상태를 'completed'로 업데이트
+        logger.info(f"[{task_id}] 4단계: 작업 상태 업데이트")
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
         if task:
             task.status = "completed"
             task.completed_at = datetime.utcnow()
         
         db_session.commit()
+        logger.info(f"[{task_id}] 작업 완료: 모든 데이터 저장됨")
+
     except Exception as e:
+        import traceback
+        logger.error(f"[{task_id}] 스크래핑/DB 저장 중 에러 발생:")
+        logger.error(f"[{task_id}] 에러 타입: {type(e).__name__}")
+        logger.error(f"[{task_id}] 에러 메시지: {str(e)}")
+        logger.error(f"[{task_id}] 에러 위치:\n{traceback.format_exc()}")
         db_session.rollback()
         task = db_session.query(db_models.Task).filter(db_models.Task.task_id == task_id).first()
         if task:
             task.status = "failed"
             task.completed_at = datetime.utcnow()
             db_session.commit()
-        print(f"Error during v1 scraping task {task_id}: {e}")
     finally:
         if task_id in _running_tasks:
             del _running_tasks[task_id]
         db_session.close()
+        logger.info(f"[{task_id}] 작업 종료: 리소스 정리 완료")
 
 
 def get_random_products(db: Session, count: int = 40) -> list:
