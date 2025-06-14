@@ -47,7 +47,7 @@ async def run_v2_scraping_and_store_in_db(customer_behaviors: list, task_id: str
             mappings=two_tower_mappings
         )
         search_keywords = [customer_behaviors[-1]["name"]] + [
-            rec["name"] for rec in random.choices(recommendations, k=4)
+            rec for rec in random.choices(recommendations, k=4)
         ]
 
         # 작업 취소 상태 재확인
