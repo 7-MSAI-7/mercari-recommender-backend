@@ -43,6 +43,7 @@ class PlaywrightPagePool:
             headless=True,
             args=[
                 "--no-sandbox",
+                "--disable-web-security",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
             ],
