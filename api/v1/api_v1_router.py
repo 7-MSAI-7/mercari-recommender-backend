@@ -10,6 +10,6 @@ def api_v1_router():
 
     router.include_router(recommendations_router())
     router.include_router(customer_behaviors_router(), prefix="/customers", tags=["customers"])
-    router.include_router(products_router(), prefix="/products", tags=["products"])
+    router.include_router(products_router(), tags=["products"])
 
     return router
