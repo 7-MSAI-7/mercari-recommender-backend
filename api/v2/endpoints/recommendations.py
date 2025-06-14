@@ -57,7 +57,7 @@ async def run_v2_scraping_and_store_in_db(customer_behaviors: list, task_id: str
         logger.info(f"[{task_id}] 모델 추론 결과: recommendations={recommendations}")
 
         search_keywords = [customer_behaviors[-1]["name"]] + [
-            rec for rec in random.choices(recommendations, k=4)
+            rec for rec in recommendations[:6]
         ]
         logger.info(f"[{task_id}] 검색 키워드 생성: search_keywords={search_keywords}")
 
