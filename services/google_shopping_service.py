@@ -164,7 +164,7 @@ class GoogleShoppingService:
                                 image_element = await item.query_selector("img")
                                 image = (
                                     await image_element.get_attribute("src")
-                                    if image_element
+                                    if image_element and "data:image" in await image_element.get_attribute("src")
                                     else "No Image"
                                 )
                                 if (
